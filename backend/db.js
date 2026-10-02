@@ -28,4 +28,10 @@ db.exec(`
   );
 `);
 
+// Migração: adiciona colunas novas sem perder os livros já cadastrados
+const colunas = db.prepare('PRAGMA table_info(livros)').all().map((c) => c.name);
+if (!colunas.includes('descricao')) db.exec('ALTER TABLE livros ADD COLUMN descricao TEXT');
+if (!colunas.includes('paginas')) db.exec('ALTER TABLE livros ADD COLUMN paginas INTEGER');
+if (!colunas.includes('capa')) db.exec('ALTER TABLE livros ADD COLUMN capa TEXT');
+
 module.exports = db;

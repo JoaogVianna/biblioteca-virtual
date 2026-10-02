@@ -18,18 +18,22 @@ router.get('/', (req, res) => {
 });
 
 // Cadastrar livro
+// Cadastrar livro
 router.post('/', (req, res) => {
-  const { titulo, autor, genero, ano } = req.body;
+  const { titulo, autor, genero, ano, descricao, paginas, capa } = req.body;
 
   if (!titulo || !autor) {
     return res.status(400).json({ erro: 'titulo e autor são obrigatórios' });
   }
 
   const info = db
-    .prepare('INSERT INTO livros (titulo, autor, genero, ano) VALUES (?, ?, ?, ?)')
-    .run(titulo, autor, genero ?? null, ano ?? null);
+    .prepare(
+      `INSERT INTO livros (titulo, autor, genero, ano, descricao, paginas, capa)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(titulo, autor, genero ?? null, ano ?? null, descricao ?? null, paginas ?? null, capa ?? null);
 
-  res.status(201).json({ id: info.lastInsertRowid, titulo, autor, genero, ano });
+  res.status(201).json({ id: info.lastInsertRowid, titulo, autor, genero, ano, descricao, paginas, capa });
 });
 
 module.exports = router;
@@ -47,7 +51,7 @@ router.get('/:id', (req, res) => {
 
 // Editar livro (só atualiza os campos enviados)
 router.put('/:id', (req, res) => {
-  const { titulo, autor, genero, ano } = req.body;
+  const { titulo, autor, genero, ano, descricao, paginas, capa } = req.body;
 
   const info = db
     .prepare(
@@ -55,10 +59,22 @@ router.put('/:id', (req, res) => {
        SET titulo = COALESCE(?, titulo),
            autor = COALESCE(?, autor),
            genero = COALESCE(?, genero),
-           ano = COALESCE(?, ano)
+           ano = COALESCE(?, ano),
+           descricao = COALESCE(?, descricao),
+           paginas = COALESCE(?, paginas),
+           capa = COALESCE(?, capa)
        WHERE id = ?`
     )
-    .run(titulo ?? null, autor ?? null, genero ?? null, ano ?? null, req.params.id);
+    .run(
+      titulo ?? null,
+      autor ?? null,
+      genero ?? null,
+      ano ?? null,
+      descricao ?? null,
+      paginas ?? null,
+      capa ?? null,
+      req.params.id
+    );
 
   if (info.changes === 0) {
     return res.status(404).json({ erro: 'Livro não encontrado' });
@@ -67,17 +83,30 @@ router.put('/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM livros WHERE id = ?').get(req.params.id));
 });
 
+// Regra de exclusão dentro de uma transação
+const excluirLivro = db.transaction((id) => {
+  const livro = db.prepare('SELECT id FROM livros WHERE id = ?').get(id);
+  if (!livro) return { status: 404, erro: 'Livro não encontrado' };
+
+  const aberto = db
+    .prepare('SELECT id FROM emprestimos WHERE livro_id = ? AND data_devolucao IS NULL')
+    .get(id);
+  if (aberto) {
+    return { status: 409, erro: 'Livro está emprestado. Devolva antes de excluir.' };
+  }
+
+  db.prepare('DELETE FROM emprestimos WHERE livro_id = ?').run(id);
+  db.prepare('DELETE FROM livros WHERE id = ?').run(id);
+  return { status: 204 };
+});
+
 // Deletar livro
 router.delete('/:id', (req, res) => {
-  try {
-    const info = db.prepare('DELETE FROM livros WHERE id = ?').run(req.params.id);
+  const r = excluirLivro(req.params.id);
 
-    if (info.changes === 0) {
-      return res.status(404).json({ erro: 'Livro não encontrado' });
-    }
-
-    res.status(204).end();
-  } catch (e) {
-    res.status(409).json({ erro: 'Livro possui empréstimos registrados' });
+  if (r.erro) {
+    return res.status(r.status).json({ erro: r.erro });
   }
+
+  res.status(204).end();
 });

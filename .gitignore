@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+biblioteca.db
+biblioteca.db-journal
+.DS_Store
